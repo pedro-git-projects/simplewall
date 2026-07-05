@@ -110,6 +110,8 @@ func newApp(w *app.Window) *wallpaperApp {
 		}
 	}()
 
+	go a.restoreFolders()
+
 	return a
 }
 
@@ -191,6 +193,7 @@ func (a *wallpaperApp) update(gtx layout.Context) {
 		if a.folderRemoveBtns[i].Clicked(gtx) {
 			a.mu.Unlock()
 			a.removeFolder(i)
+			a.saveConfig()
 			a.mu.Lock()
 			break
 		}

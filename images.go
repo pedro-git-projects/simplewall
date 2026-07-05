@@ -162,6 +162,7 @@ func (a *wallpaperApp) addFolder(dir string) {
 	a.mu.Unlock()
 
 	a.window.Invalidate()
+	a.saveConfig()
 
 	for _, p := range toLoad {
 		go func() {
