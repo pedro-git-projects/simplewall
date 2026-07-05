@@ -15,6 +15,15 @@ type config struct {
 	Folders []string `json:"folders"`
 }
 
+// renderCommand is the exact external command that was last used to render the
+// wallpaper (typically feh plus its args). Only the most recent one is kept, so
+// --restore can re-run precisely what was applied last, across all fit and
+// mirror modes.
+type renderCommand struct {
+	Name string   `json:"name"`
+	Args []string `json:"args"`
+}
+
 // configPath returns the path to the config file, creating its parent
 // directory if needed.
 func configPath() (string, error) {
@@ -27,6 +36,66 @@ func configPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "config.json"), nil
+}
+
+// lastCommandPath returns the path to the file holding the single most recent
+// render command, creating its parent directory if needed.
+func lastCommandPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	dir = filepath.Join(dir, "simplewall")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "last-command.json"), nil
+}
+
+// saveLastCommand overwrites the stored render command with cmd, keeping only
+// the latest. Failures are logged but not fatal: losing the ability to restore
+// is not worth crashing over.
+func saveLastCommand(cmd renderCommand) {
+	path, err := lastCommandPath()
+	if err != nil {
+		log.Printf("last-command: %v", err)
+		return
+	}
+
+	data, err := json.MarshalIndent(cmd, "", "  ")
+	if err != nil {
+		log.Printf("last-command: %v", err)
+		return
+	}
+
+	// Write to a temp file and rename so a crash mid-write can't leave a
+	// truncated, unparseable command behind.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		log.Printf("last-command: %v", err)
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		log.Printf("last-command: %v", err)
+	}
+}
+
+// loadLastCommand reads the stored render command. A missing or unreadable file
+// yields an error, since there is nothing to restore.
+func loadLastCommand() (renderCommand, error) {
+	var cmd renderCommand
+	path, err := lastCommandPath()
+	if err != nil {
+		return cmd, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return cmd, err
+	}
+	if err := json.Unmarshal(data, &cmd); err != nil {
+		return cmd, err
+	}
+	return cmd, nil
 }
 
 // loadConfig reads the persisted config. A missing or unreadable file yields an

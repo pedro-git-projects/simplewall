@@ -33,6 +33,30 @@ func isMirrorMode(mode string) bool {
 	return mode == modeMirrorA || mode == modeMirrorB
 }
 
+// runFeh runs feh with the given args and, on success, persists the exact
+// command as the single latest render command so --restore can reproduce it.
+func runFeh(args []string) error {
+	if err := exec.Command("feh", args...).Run(); err != nil {
+		return err
+	}
+	saveLastCommand(renderCommand{Name: "feh", Args: args})
+	return nil
+}
+
+// restoreLast re-runs the most recent render command previously applied by the
+// program. It is used by the --restore CLI flag to reapply the last wallpaper
+// configuration without opening the GUI.
+func restoreLast() error {
+	cmd, err := loadLastCommand()
+	if err != nil {
+		return fmt.Errorf("no previous wallpaper to restore: %w", err)
+	}
+	if cmd.Name == "" {
+		return fmt.Errorf("no previous wallpaper to restore")
+	}
+	return exec.Command(cmd.Name, cmd.Args...).Run()
+}
+
 func getMonitors() []string {
 	out, err := exec.Command("xrandr", "--listmonitors").Output()
 	if err != nil {
@@ -148,7 +172,7 @@ func setWallpaper(imagePath, mode, screen string, monitors []string) error {
 		}
 	}
 
-	return exec.Command("feh", args...).Run()
+	return runFeh(args)
 }
 
 // setMirrorWallpaper applies imagePath to one monitor and a horizontally
@@ -171,7 +195,7 @@ func setMirrorWallpaper(imagePath, mode string, monitors []string) error {
 		first, second = mirrored, imagePath
 	}
 
-	return exec.Command("feh", "--bg-fill", first, second).Run()
+	return runFeh([]string{"--bg-fill", first, second})
 }
 
 func pickFolder() (string, error) {
