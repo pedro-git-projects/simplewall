@@ -24,6 +24,16 @@ type renderCommand struct {
 	Args []string `json:"args"`
 }
 
+// monitorState is the wallpaper currently shown on a single monitor: the source
+// image and the fit mode it is rendered with. Because feh can only apply one
+// mode per invocation, the app keeps its own per-monitor record so that changing
+// one monitor can rebuild the full desktop composite without disturbing the
+// image or mode of the others. The map is keyed by monitor name (from xrandr).
+type monitorState struct {
+	Image string `json:"image"`
+	Mode  string `json:"mode"`
+}
+
 // configPath returns the path to the config file, creating its parent
 // directory if needed.
 func configPath() (string, error) {
@@ -50,6 +60,67 @@ func lastCommandPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "last-command.json"), nil
+}
+
+// monitorStatePath returns the path to the file holding the per-monitor
+// wallpaper state, creating its parent directory if needed.
+func monitorStatePath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	dir = filepath.Join(dir, "simplewall")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "monitors.json"), nil
+}
+
+// loadMonitorState reads the persisted per-monitor state. A missing or
+// unreadable file yields an empty map, so callers can seed it from scratch.
+func loadMonitorState() map[string]monitorState {
+	state := map[string]monitorState{}
+	path, err := monitorStatePath()
+	if err != nil {
+		return state
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return state
+	}
+	if err := json.Unmarshal(data, &state); err != nil {
+		log.Printf("monitor-state: %v", err)
+		return map[string]monitorState{}
+	}
+	return state
+}
+
+// saveMonitorState overwrites the stored per-monitor state. Failures are logged
+// but not fatal: losing the record only means a later single-monitor change
+// falls back to reading ~/.fehbg to reconstruct the others.
+func saveMonitorState(state map[string]monitorState) {
+	path, err := monitorStatePath()
+	if err != nil {
+		log.Printf("monitor-state: %v", err)
+		return
+	}
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		log.Printf("monitor-state: %v", err)
+		return
+	}
+
+	// Write to a temp file and rename so a crash mid-write can't leave a
+	// truncated, unparseable state file behind.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		log.Printf("monitor-state: %v", err)
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		log.Printf("monitor-state: %v", err)
+	}
 }
 
 // saveLastCommand overwrites the stored render command with cmd, keeping only

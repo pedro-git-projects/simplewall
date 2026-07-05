@@ -155,7 +155,7 @@ func (a *wallpaperApp) update(gtx layout.Context) {
 			mode := a.currentMode
 			screen := a.currentScreen
 			go func() {
-				if err := setWallpaper(path, mode, screen, a.monitors); err != nil {
+				if err := setWallpaper(path, mode, screen); err != nil {
 					a.status = "Error: " + err.Error()
 					a.errMsg = true
 				} else {
