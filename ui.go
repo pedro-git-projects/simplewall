@@ -580,8 +580,11 @@ func (a *wallpaperApp) drawThumb(gtx layout.Context, entry *imageEntry, selected
 		}
 		inner := image.Rect(b, b, sz.X-b, sz.Y-b)
 
+		// Keep the thumbnail contents (image and hover bar) clipped to the
+		// area inside the selection border.
+		defer clip.Rect(inner).Push(gtx.Ops).Pop()
+
 		if entry.thumb != nil {
-			defer clip.Rect(inner).Push(gtx.Ops).Pop()
 			widget.Image{
 				Src:      paint.NewImageOp(entry.thumb),
 				Fit:      widget.Cover,
@@ -591,8 +594,38 @@ func (a *wallpaperApp) drawThumb(gtx layout.Context, entry *imageEntry, selected
 			paint.FillShape(gtx.Ops, clrBg1, clip.Rect(inner).Op())
 		}
 
+		// On hover, reveal the file name in a translucent bar across the
+		// bottom of the thumbnail.
+		if entry.click.Hovered() {
+			a.drawThumbName(gtx, inner, filepath.Base(entry.path))
+		}
+
 		return layout.Dimensions{Size: sz}
 	})
+}
+
+// drawThumbName paints a translucent bar with the given name across the bottom
+// of the rect r, used to reveal the wallpaper's file name on hover.
+func (a *wallpaperApp) drawThumbName(gtx layout.Context, r image.Rectangle, name string) {
+	barH := gtx.Dp(unit.Dp(22))
+	if barH > r.Dy() {
+		barH = r.Dy()
+	}
+	pad := gtx.Dp(unit.Dp(6))
+	bar := image.Rect(r.Min.X, r.Max.Y-barH, r.Max.X, r.Max.Y)
+
+	paint.FillShape(gtx.Ops, color.NRGBA{A: 0xcc}, clip.Rect(bar).Op())
+
+	off := op.Offset(image.Pt(bar.Min.X+pad, bar.Min.Y)).Push(gtx.Ops)
+	cgtx := gtx
+	cgtx.Constraints = layout.Exact(image.Pt(max(bar.Dx()-2*pad, 0), barH))
+	layout.W.Layout(cgtx, func(gtx layout.Context) layout.Dimensions {
+		lbl := material.Caption(a.th, name)
+		lbl.Color = clrFg
+		lbl.MaxLines = 1
+		return lbl.Layout(gtx)
+	})
+	off.Pop()
 }
 
 // Helpers
