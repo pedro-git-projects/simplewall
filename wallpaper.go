@@ -19,6 +19,20 @@ var fehFlags = map[string]string{
 	"tile":   "--bg-tile",
 }
 
+// Mirror modes span two monitors: one shows the wallpaper normally, the other
+// shows a horizontally-flipped copy. The α/β variants differ only in which
+// monitor gets which. They are only offered when exactly two monitors exist.
+const (
+	modeMirrorA = "mirror-α"
+	modeMirrorB = "mirror-β"
+)
+
+var mirrorModes = []string{modeMirrorA, modeMirrorB}
+
+func isMirrorMode(mode string) bool {
+	return mode == modeMirrorA || mode == modeMirrorB
+}
+
 func getMonitors() []string {
 	out, err := exec.Command("xrandr", "--listmonitors").Output()
 	if err != nil {
@@ -99,6 +113,10 @@ func readFehbg(n int) []string {
 }
 
 func setWallpaper(imagePath, mode, screen string, monitors []string) error {
+	if isMirrorMode(mode) {
+		return setMirrorWallpaper(imagePath, mode, monitors)
+	}
+
 	flag, ok := fehFlags[mode]
 	if !ok {
 		flag = "--bg-fill"
@@ -131,6 +149,29 @@ func setWallpaper(imagePath, mode, screen string, monitors []string) error {
 	}
 
 	return exec.Command("feh", args...).Run()
+}
+
+// setMirrorWallpaper applies imagePath to one monitor and a horizontally
+// mirrored copy to the other, spanning both screens. mirror-α puts the normal
+// image on the first monitor and the mirror on the second; mirror-β swaps them.
+// Monitor order follows getMonitors (i.e. feh's own detection order).
+func setMirrorWallpaper(imagePath, mode string, monitors []string) error {
+	numMonitors := len(monitors) - 1 // exclude "All"
+	if numMonitors != 2 {
+		return fmt.Errorf("mirror mode requires exactly two monitors")
+	}
+
+	mirrored, err := mirrorImage(imagePath)
+	if err != nil {
+		return err
+	}
+
+	first, second := imagePath, mirrored
+	if mode == modeMirrorB {
+		first, second = mirrored, imagePath
+	}
+
+	return exec.Command("feh", "--bg-fill", first, second).Run()
 }
 
 func pickFolder() (string, error) {

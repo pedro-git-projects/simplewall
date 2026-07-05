@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -61,7 +62,7 @@ type wallpaperApp struct {
 	addFolderBtn     widget.Clickable
 	applyBtn         widget.Clickable
 	folderRemoveBtns []widget.Clickable
-	modeClicks       [5]widget.Clickable
+	modeClicks       []widget.Clickable
 	screenClicks     []widget.Clickable
 
 	folderList layout.List
@@ -91,6 +92,7 @@ func newApp(w *app.Window) *wallpaperApp {
 		currentScreen: monitors[0],
 		monitors:      monitors,
 		screenClicks:  make([]widget.Clickable, len(monitors)),
+		modeClicks:    make([]widget.Clickable, len(fehModes)+len(mirrorModes)),
 		thumbCh:       make(chan thumbResult, 128),
 	}
 
@@ -166,10 +168,16 @@ func (a *wallpaperApp) update(gtx layout.Context) {
 		}
 	}
 
-	for i, mode := range fehModes {
+	modes := a.availableModes()
+	for i, mode := range modes {
 		if a.modeClicks[i].Clicked(gtx) {
 			a.currentMode = mode
 		}
+	}
+	// If the active mode is no longer offered (e.g. a mirror mode after a
+	// monitor was unplugged), fall back to a plain fit mode.
+	if !slices.Contains(modes, a.currentMode) {
+		a.currentMode = fehModes[0]
 	}
 
 	for i, screen := range a.monitors {
@@ -313,9 +321,20 @@ func (a *wallpaperApp) drawDivider(gtx layout.Context) layout.Dimensions {
 	return layout.Dimensions{Size: sz}
 }
 
+// availableModes returns the fit modes plus, when exactly two monitors are
+// present, the mirror modes. The mirror modes span both screens, so they only
+// make sense on a dual-monitor setup.
+func (a *wallpaperApp) availableModes() []string {
+	if len(a.monitors)-1 == 2 {
+		return append(append([]string{}, fehModes...), mirrorModes...)
+	}
+	return fehModes
+}
+
 func (a *wallpaperApp) drawModeSelector(gtx layout.Context) layout.Dimensions {
-	return wrapFlow(gtx, len(fehModes), func(gtx layout.Context, i int) layout.Dimensions {
-		return a.drawToggle(gtx, &a.modeClicks[i], capitalize(fehModes[i]), a.currentMode == fehModes[i])
+	modes := a.availableModes()
+	return wrapFlow(gtx, len(modes), func(gtx layout.Context, i int) layout.Dimensions {
+		return a.drawToggle(gtx, &a.modeClicks[i], capitalize(modes[i]), a.currentMode == modes[i])
 	})
 }
 

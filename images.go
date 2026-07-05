@@ -1,10 +1,12 @@
 package main
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
-	_ "image/png"
+	"image/png"
 	"log"
 	"os"
 	"path/filepath"
@@ -80,6 +82,57 @@ func loadThumbnail(path string, thumbW, thumbH int) (image.Image, error) {
 	dst := image.NewRGBA(image.Rect(0, 0, thumbW, thumbH))
 	xdraw.BiLinear.Scale(dst, dst.Bounds(), src, crop, xdraw.Src, nil)
 	return dst, nil
+}
+
+// mirrorImage decodes the image at srcPath, flips it horizontally, and writes
+// the result as a PNG into the user cache dir. It returns the path to the
+// mirrored copy so feh can point a monitor at it. The output name is derived
+// from srcPath, so repeated calls overwrite the same file instead of piling up
+// on disk; the file is regenerated on every call to stay in sync with the
+// source.
+func mirrorImage(srcPath string) (string, error) {
+	f, err := os.Open(srcPath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	src, _, err := image.Decode(f)
+	if err != nil {
+		return "", err
+	}
+
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			dst.Set(w-1-x, y, src.At(b.Min.X+x, b.Min.Y+y))
+		}
+	}
+
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		cacheDir = os.TempDir()
+	}
+	dir := filepath.Join(cacheDir, "simple-wallpaper")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+
+	sum := sha1.Sum([]byte(srcPath))
+	out := filepath.Join(dir, "mirror-"+hex.EncodeToString(sum[:])+".png")
+
+	of, err := os.Create(out)
+	if err != nil {
+		return "", err
+	}
+	defer of.Close()
+
+	if err := png.Encode(of, dst); err != nil {
+		return "", err
+	}
+	return out, nil
 }
 
 func (a *wallpaperApp) addFolder(dir string) {
